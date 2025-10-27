@@ -3,9 +3,14 @@ import anthropic
 import os
 import json
 import tiktoken
+import sys
 from pathlib import Path
 from typing import List, Dict, Optional
 from dotenv import load_dotenv
+
+# Add parent directory to path to allow imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from src.vector_store import VectorStoreSingleton
 from config.constants import (
     DEFAULT_LLM_CLIENT,
@@ -297,16 +302,20 @@ class DocumentRAG:
         except Exception as e:
             raise RAGError(f"Failed to estimate cost: {e}")
 
-    def generate_response(self, query: str, stream: bool = False) -> Dict:
+    def generate_response(self, query: str, stream: bool = False, require_confirmation: bool = True) -> Dict:
         """
         Generate response using RAG with configurable parameters.
 
         Args:
             query: User's question
             stream: Whether to stream the response
+            require_confirmation: Whether to ask for user confirmation before proceeding
 
         Returns:
             Dictionary with answer, sources, and usage information
+
+        Raises:
+            RAGError: If user cancels the operation
         """
         # Step 1: Retrieve relevant context
         context, sources = self.retrieve_context(query)
@@ -314,7 +323,11 @@ class DocumentRAG:
         # Step 2: Create prompt
         prompt = self.create_prompt(query, context)
 
-        # Step 3: Generate response
+        # Step 3: Display context and ask for confirmation
+        if require_confirmation:
+            self._display_context_and_confirm(query, context, sources)
+
+        # Step 4: Generate response
         if stream:
             return self._generate_streaming(prompt, sources)
         else:
@@ -333,6 +346,50 @@ class DocumentRAG:
                     'output_tokens': response.usage.output_tokens
                 }
             }
+
+    def _display_context_and_confirm(self, query: str, context: str, sources: List[Dict]) -> None:
+        """
+        Display retrieved context and retrieved sources, then ask for user confirmation.
+
+        Args:
+            query: User's question
+            context: Retrieved context from vector store
+            sources: List of source documents
+
+        Raises:
+            RAGError: If user chooses not to proceed
+        """
+        print("\n" + "=" * 70)
+        print("QUERY")
+        print("=" * 70)
+        print(f"{query}\n")
+
+        print("=" * 70)
+        print("RETRIEVED CONTEXT")
+        print("=" * 70)
+        if context.strip():
+            print(context)
+        else:
+            print("(No context retrieved from vector store)")
+        print()
+
+        print("=" * 70)
+        print("SOURCES")
+        print("=" * 70)
+        if sources:
+            for source in sources:
+                print(f"{source['id']} {source['title']} (chunk: {source['chunk_id']})")
+        else:
+            print("(No sources available)")
+        print()
+
+        print("=" * 70)
+        print("CONFIRMATION")
+        print("=" * 70)
+        response = input("Proceed with generating response? (yes/no): ").strip().lower()
+
+        if response not in ['yes', 'y']:
+            raise RAGError("User cancelled the operation")
 
     def _generate_streaming(self, prompt: str, sources: List[Dict]):
         """Generate streaming response"""
@@ -361,7 +418,7 @@ if __name__ == "__main__":
         # - prompt_preset: Prompt template from rag_prompts.json
         # - api_key: Optional, reads from environment if not provided
         rag = DocumentRAG(
-            collection_name="stripe_docs",
+            collection_name="stripe_payment_docs",
             llm_client="anthropic",
             model="claude-sonnet-4",
             prompt_preset="payment_api"
