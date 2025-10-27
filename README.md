@@ -131,4 +131,52 @@ To set up the vectorization configuration, please add an entry in the `/config/v
 | `metadata.content_type` | The type of the documentation provided. For example, if it is API related documentation, it can say "api_documentation" |
 
 ### Running the Vectorization and Storage Process
-To start vectorizing the chunked documents, run `python src/vector_store.py`. This will start by running a check to see how many chunks will need to be vectorized, along with the estimated cost based on the OpenAI model used for embedding. You will need to enter a confirmation as a `yes`/`no` input before it will proceed. This confirmation is included as a guardrail to prevent accidental vectorization as this will incur a cost.
+
+**PRE-REQUISITES**:
+1. You must have successfully run `python src/data_collector.py` to collect raw documentation
+2. You must have successfully run `python src/data_processor.py` to chunk the raw documents
+3. You must have configured the vector store collections in `/config/vector_store_config.json`
+
+Once these prerequisites are met, run the following command to start vectorizing and storing the chunked documents:
+
+```bash
+python scripts/init_vector_store.py
+```
+
+You can also customize the paths if needed:
+
+```bash
+python scripts/init_vector_store.py --config config/vector_store_config.json --data data/processed --db ./chroma_db
+```
+
+#### What Happens During Vectorization
+
+1. **Configuration Loading**: The script loads your vector store configuration to understand which collections to create
+2. **Chunk Loading**: All processed chunks from the data directory are loaded into memory
+3. **Cost Estimation**: A cost estimate is displayed showing:
+   - Total number of documents to vectorize
+   - Embedding model being used
+   - Estimated cost in USD based on OpenAI pricing
+   - Pricing information date
+4. **User Confirmation**: You will be asked to confirm with a `yes`/`no` input before proceeding. This is a guardrail to prevent accidental vectorization as this will incur a cost.
+5. **Vectorization**: Once confirmed, documents are vectorized and added to ChromaDB collections
+6. **Summary**: A summary report is displayed showing successful, failed, and skipped collections
+
+#### Options
+
+- `--config CONFIG_PATH`: Path to vector_store_config.json (default: config/vector_store_config.json)
+- `--data DATA_DIR`: Directory containing processed chunks (default: data/processed)
+- `--db DB_PATH`: ChromaDB storage path (default: ./chroma_db)
+
+#### Troubleshooting
+
+If you encounter errors during vectorization:
+
+1. **"No processed chunks found"**: Make sure you've run `python src/data_processor.py` first
+2. **"Configuration file not found"**: Make sure you've created `/config/vector_store_config.json`
+3. **"OpenAI API key not found"**: Make sure your `.env` file contains `OPENAI_API_KEY`
+4. **Rate limit errors**: The system will automatically retry with exponential backoff, but you may need to wait before running again
+
+#### Resuming Interrupted Vectorization
+
+If vectorization is interrupted (e.g., due to network issues), you can safely run the command again. The system will automatically skip chunks that have already been vectorized and continue from where it left off.
