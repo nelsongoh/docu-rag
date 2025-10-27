@@ -1,3 +1,6 @@
+# Raw and processed knowledge dataset
+/data
+
 # Local Chroma DB
 /chroma_db
 
