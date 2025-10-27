@@ -31,3 +31,45 @@ PRICING_DATE = "2025-01-24"
 
 # Tokenizer encoding
 TOKENIZER_ENCODING = "cl100k_base"  # Used by GPT-3.5, GPT-4, and text-embedding-3-* models
+
+# RAG Configuration
+# Supported LLM clients
+SUPPORTED_LLM_CLIENTS = {
+    "anthropic": "anthropic",
+    "openai": "openai"
+}
+
+# Default LLM client
+DEFAULT_LLM_CLIENT = "anthropic"
+
+# Supported Claude models
+SUPPORTED_CLAUDE_MODELS = {
+    "claude-sonnet-4": "claude-sonnet-4-20250514",
+    "claude-3-5-sonnet": "claude-3-5-sonnet-20241022",
+    "claude-3-5-haiku": "claude-3-5-haiku-20241022",
+}
+
+# Default Claude model
+DEFAULT_CLAUDE_MODEL = "claude-sonnet-4"
+
+# RAG Generation parameters
+RAG_MAX_TOKENS = 2000
+RAG_TEMPERATURE = 0.3  # Lower temperature for more factual responses
+RAG_DEFAULT_CONTEXT_SIZE = 5  # Default number of context chunks to retrieve
+
+# Model pricing for cost estimation (per 1M input/output tokens)
+# Last updated: 2025-01-24
+CLAUDE_PRICING = {
+    "claude-sonnet-4": {
+        "input": 3.00,
+        "output": 15.00
+    },
+    "claude-3-5-sonnet": {
+        "input": 3.00,
+        "output": 15.00
+    },
+    "claude-3-5-haiku": {
+        "input": 0.80,
+        "output": 4.00
+    }
+}
