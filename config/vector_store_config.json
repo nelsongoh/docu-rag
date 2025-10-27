@@ -1,0 +1,17 @@
+{
+  "collections": [
+    {
+      "name": "stripe_payment_docs",
+      "source": "stripe",
+      "description": "Stripe payment API documentation and guides",
+      "metadata": {
+        "domain": "payments",
+        "provider": "stripe",
+        "version": "2024-01",
+        "content_type": "api_documentation"
+      }
+    }
+  ],
+  "embedding_model": "text-embedding-3-small",
+  "chroma_db_path": "./chroma_db"
+}
