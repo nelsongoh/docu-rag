@@ -1,5 +1,5 @@
 # Document Retrieval-Augmented Generation (Docu-Rag)
-This is my pet project to learn to build a retrieval-augmented generation for building a question-and-answer system based on some input documents.
+This is my pet project to learn to build a retrieval-augmented generation for building a question-and-answer system based on some input documents. This project was built with the help of Claude Code, which greatly accelerated my learning journey through interactive development and code review.
 
 ## Overview
 I'll be building a system that answers questions about payment API integration, using retrieval-augmented generation. I'll be using Stripe's documentation as reference to build the available knowledge base as it's very well structured.
