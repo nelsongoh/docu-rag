@@ -180,3 +180,98 @@ If you encounter errors during vectorization:
 #### Resuming Interrupted Vectorization
 
 If vectorization is interrupted (e.g., due to network issues), you can safely run the command again. The system will automatically skip chunks that have already been vectorized and continue from where it left off.
+
+## Interacting with the RAG Model via Web Application
+
+### Overview
+The Streamlit web application provides an interactive interface to query the RAG model. It allows you to ask questions about the documentation sources that have been vectorized and stored. The application provides real-time cost estimation and displays relevant source citations for each answer.
+
+### Pre-requisites
+Before you can run the web application, ensure that you have completed the following steps:
+
+1. Successfully collected raw documentation via `python src/data_collector.py`
+2. Successfully processed and chunked the documents via `python src/data_processor.py`
+3. Successfully vectorized and stored the chunks via `python scripts/init_vector_store.py`
+4. Configured your documentation sources in `/config/doc_sources.json`
+5. Configured your vector store collections in `/config/vector_store_config.json`
+
+### Running the Web Application
+
+To start the Streamlit web application, run the following command from the root of the project directory:
+
+```bash
+streamlit run app.py
+```
+
+The application will start and open in your default web browser at `http://localhost:8501`. If it doesn't open automatically, you can navigate to this URL manually.
+
+### Using the Web Application
+
+#### Selecting Documentation
+
+At the top of the sidebar, you will see a dropdown menu labeled **"Choose documentation to query"**. This allows you to select which documentation source you'd like to query against. The dropdown options are dynamically loaded from your `/config/vector_store_config.json` file, so you can add multiple documentation sources and switch between them seamlessly.
+
+#### Asking Questions
+
+Once you've selected a documentation source, you can type your question into the chat input box at the bottom of the screen. For example, you might ask "How do I handle failed payment retries?" for the Stripe documentation.
+
+#### Cost Estimation & Confirmation
+
+After you submit a question, the application will:
+
+1. **Estimate the cost**: The system performs a cost estimate to show you how much the query will cost (based on the selected model's pricing). This includes:
+   - Estimated input tokens (the tokens in your question + retrieved context)
+   - Estimated output tokens (approximate response length)
+   - Estimated cost in USD
+
+2. **Request confirmation**: You will see two buttons:
+   - **"✅ Yes, generate response"**: Proceed with generating the response
+   - **"❌ No, cancel"**: Cancel the operation and return to the chat input
+
+This confirmation step is a guardrail to prevent unexpected API costs.
+
+#### Viewing Results
+
+Once you confirm by clicking "Yes", the application will:
+
+1. Retrieve relevant context from the vector database
+2. Generate a response using Claude based on the retrieved context
+3. Display the generated answer
+4. Show the actual token usage and cost (compared to the estimate)
+5. Display source citations in an expandable section
+
+Each response includes:
+
+- **The answer**: A comprehensive response to your question, grounded in the retrieved documentation
+- **View Sources**: An expandable section showing the specific documentation chunks that were used to generate the answer
+- **Token usage**: The actual number of input and output tokens used for the query
+- **Actual cost**: The actual cost incurred for this query
+
+#### Example Questions
+
+The sidebar provides example questions that you can click to quickly test the system. These are pre-populated for the Stripe documentation and include:
+
+- "How do I handle failed payment retries?"
+- "What's the difference between Payment Intent and Charge?"
+- "How do webhooks work for subscriptions?"
+- "What are common payment errors and how to handle them?"
+- "How do I implement idempotency for payments?"
+
+### Troubleshooting
+
+If you encounter issues while using the web application:
+
+1. **"No documentation sources available"**: Ensure you've configured `/config/doc_sources.json` and `/config/vector_store_config.json` correctly
+2. **"No relevant context found"**: The question may not have matches in the vectorized documentation. Try rephrasing your question or ensure the documentation has been fully vectorized
+3. **API key errors**: Ensure your `.env` file contains valid `ANTHROPIC_API_KEY` for Claude responses
+4. **Connection errors**: Make sure you have a stable internet connection, as the application needs to communicate with the Anthropic API for generating responses
+
+### Customizing the Application
+
+The web application behavior can be customized by modifying values in the RAG initialization section of `app.py`. You can change:
+
+- `collection_name`: The vector store collection to query against
+- `model`: The Claude model to use for generating responses
+- `prompt_preset`: The prompt template to use
+
+For advanced configuration, see the documentation in `config/rag_prompts.json` for prompt templates and `config/constants.py` for model selections and pricing information.
