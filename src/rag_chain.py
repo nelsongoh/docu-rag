@@ -315,15 +315,22 @@ class DocumentRAG:
             Dictionary with answer, sources, and usage information
 
         Raises:
-            RAGError: If user cancels the operation
+            RAGError: If user cancels the operation or no context is found
         """
         # Step 1: Retrieve relevant context
         context, sources = self.retrieve_context(query)
 
-        # Step 2: Create prompt
+        # Step 2: Validate that context was retrieved
+        if not context or not context.strip():
+            raise RAGError(
+                f"No relevant context found for your query in the '{self.collection_name}' collection. "
+                "Please try a different question or verify that the documentation has been vectorized."
+            )
+
+        # Step 3: Create prompt
         prompt = self.create_prompt(query, context)
 
-        # Step 3: Display context and ask for confirmation
+        # Step 4: Display context and ask for confirmation
         if require_confirmation:
             self._display_context_and_confirm(query, context, sources)
 
