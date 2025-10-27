@@ -28,6 +28,73 @@ class VectorStoreError(Exception):
     """Custom exception for VectorStore errors"""
     pass
 
+
+class VectorStoreSingleton:
+    """
+    Singleton pattern implementation for VectorStore to avoid costly re-initialization.
+
+    Ensures only one VectorStore instance is created per collection and reused
+    throughout the application lifecycle. This prevents redundant initialization
+    which can be costly in terms of API calls and disk I/O.
+
+    Usage:
+        vector_store = VectorStoreSingleton.get_instance(
+            collection_name="my_collection",
+            description="My collection description"
+        )
+    """
+    _instances: Dict[str, 'VectorStore'] = {}
+    _lock = object()
+
+    @classmethod
+    def get_instance(
+        cls,
+        collection_name: str,
+        description: str = "",
+        metadata: Optional[Dict] = None,
+        chroma_db_path: str = "./chroma_db"
+    ) -> 'VectorStore':
+        """
+        Get or create a VectorStore instance for the given collection.
+
+        Args:
+            collection_name: Name of the ChromaDB collection
+            description: Description of the collection
+            metadata: Metadata to attach to the collection
+            chroma_db_path: Path to ChromaDB storage directory
+
+        Returns:
+            VectorStore instance (singleton per collection)
+
+        Raises:
+            ValueError: If collection_name is invalid
+        """
+        if not collection_name or not isinstance(collection_name, str):
+            raise ValueError("collection_name must be a non-empty string")
+
+        if collection_name not in cls._instances:
+            if metadata is None:
+                metadata = {}
+
+            cls._instances[collection_name] = VectorStore(
+                collection_name=collection_name,
+                description=description,
+                metadata=metadata,
+                chroma_db_path=chroma_db_path
+            )
+
+        return cls._instances[collection_name]
+
+    @classmethod
+    def reset(cls) -> None:
+        """
+        Clear all cached instances.
+
+        Use only for testing or cleanup purposes. This will force re-initialization
+        of all instances on the next get_instance() call.
+        """
+        cls._instances.clear()
+
 class VectorStore:
     def __init__(self, collection_name: str, description: str, metadata: Dict, chroma_db_path: str = "./chroma_db"):
         """Initialize vector store with configurable collection
@@ -471,140 +538,193 @@ def load_processed_chunks(processed_dir: str = "data/processed") -> Dict[str, Li
     return loaded_chunks
 
 
-# Usage
-if __name__ == "__main__":
-    try:
-        # Load configuration
+def vectorize_collections(
+    config_path: str = None,
+    data_dir: str = "data/processed",
+    chroma_db_path: str = "./chroma_db"
+) -> Dict[str, any]:
+    """
+    Vectorize processed chunks and populate vector store collections.
+
+    This function orchestrates the vectorization process for all configured
+    collections. It loads processed chunks, creates vector stores, and adds
+    documents with error handling and user confirmation.
+
+    Args:
+        config_path: Path to vector_store_config.json. If None, uses default location.
+        data_dir: Directory containing processed chunk files
+        chroma_db_path: Path to ChromaDB storage directory
+
+    Returns:
+        Dictionary with vectorization results:
+        {
+            'successful': List[str],  # Collection names successfully created
+            'failed': List[str],      # Collection names that failed
+            'skipped': List[str],     # Collection names that were skipped
+            'total': int              # Total collections attempted
+        }
+
+    Raises:
+        VectorStoreError: If configuration is invalid or critical operations fail
+    """
+    if config_path is None:
         config_path = Path(__file__).parent.parent / 'config' / 'vector_store_config.json'
+    else:
+        config_path = Path(config_path)
 
-        if not config_path.exists():
-            print(f"ERROR: Configuration file not found at {config_path}")
-            print("Please create the vector store configuration file.")
-            exit(1)
+    # Load and validate configuration
+    if not config_path.exists():
+        raise VectorStoreError(
+            f"Configuration file not found at {config_path}. "
+            "Please create config/vector_store_config.json"
+        )
 
-        try:
-            with open(config_path, 'r') as f:
-                config = json.load(f)
-        except json.JSONDecodeError as e:
-            print(f"ERROR: Invalid JSON in configuration file: {e}")
-            exit(1)
-        except Exception as e:
-            print(f"ERROR: Failed to load configuration: {e}")
-            exit(1)
+    try:
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+    except json.JSONDecodeError as e:
+        raise VectorStoreError(f"Invalid JSON in configuration file: {e}")
+    except Exception as e:
+        raise VectorStoreError(f"Failed to load configuration: {e}")
 
-        # Validate configuration
-        try:
-            validate_config(config)
-        except VectorStoreError as e:
-            print(f"ERROR: Configuration validation failed: {e}")
-            exit(1)
+    # Validate configuration
+    validate_config(config)
 
-        # Load all processed chunks
-        print("Loading processed chunks...")
-        all_chunks = load_processed_chunks('data/processed')
+    # Load all processed chunks
+    print("Loading processed chunks...")
+    all_chunks = load_processed_chunks(data_dir)
 
-        if not all_chunks:
-            print("ERROR: No processed chunks found. Please run data_processor.py first.")
-            exit(1)
+    if not all_chunks:
+        raise VectorStoreError(
+            f"No processed chunks found in {data_dir}. "
+            "Please run data_processor.py first."
+        )
 
-        # Calculate total chunks
-        total_chunks = sum(len(chunks) for chunks in all_chunks.values())
-        collection_names = [coll['name'] for coll in config['collections']]
-        embedding_model = config.get('embedding_model', 'text-embedding-3-small')
+    # Calculate total chunks
+    total_chunks = sum(len(chunks) for chunks in all_chunks.values())
+    collection_names = [coll['name'] for coll in config['collections']]
+    embedding_model = config.get('embedding_model', 'text-embedding-3-small')
 
-        # Ask for user confirmation
-        if not confirm_execution(total_chunks, collection_names, embedding_model):
-            print("\nOperation cancelled by user.")
-            exit(0)
+    # Ask for user confirmation
+    if not confirm_execution(total_chunks, collection_names, embedding_model):
+        print("\nOperation cancelled by user.")
+        return {
+            'successful': [],
+            'failed': [],
+            'skipped': collection_names,
+            'total': len(collection_names)
+        }
 
-        print("\nProceeding with vectorization...")
+    print("\nProceeding with vectorization...")
 
-        # Track success/failure
-        total_collections = len(config['collections'])
-        successful_collections = []
-        failed_collections = []
-        skipped_collections = []
+    # Track success/failure
+    total_collections = len(config['collections'])
+    successful_collections = []
+    failed_collections = []
+    skipped_collections = []
 
-        # Process each collection
-        for collection_config in config['collections']:
-            collection_name = collection_config['name']
-            source = collection_config['source']
-            description = collection_config['description']
-            metadata = collection_config.get('metadata', {})
+    # Process each collection
+    for collection_config in config['collections']:
+        collection_name = collection_config['name']
+        source = collection_config['source']
+        description = collection_config['description']
+        metadata = collection_config.get('metadata', {})
 
-            print(f"\n{'=' * 60}")
-            print(f"Creating collection: {collection_name}")
-            print(f"{'=' * 60}")
-
-            # Find matching chunked file based on source
-            matching_file = None
-            matching_chunks = None
-
-            for filename, chunks in all_chunks.items():
-                # Look for files that match the source name
-                if source in filename.lower():
-                    matching_file = filename
-                    matching_chunks = chunks
-                    break
-
-            if not matching_chunks:
-                print(f"WARNING: No processed chunks found for source '{source}'")
-                print(f"Skipping collection '{collection_name}'")
-                skipped_collections.append(collection_name)
-                continue
-
-            print(f"Using chunks from: {matching_file}")
-            print(f"Number of chunks: {len(matching_chunks)}")
-
-            try:
-                # Create vector store
-                vector_store = VectorStore(
-                    collection_name=collection_name,
-                    description=description,
-                    metadata=metadata,
-                    chroma_db_path=config.get('chroma_db_path', './chroma_db')
-                )
-
-                # Add documents
-                vector_store.add_documents(matching_chunks, embedding_model=embedding_model)
-                successful_collections.append(collection_name)
-
-            except VectorStoreError as e:
-                print(f"ERROR: Failed to process collection '{collection_name}': {e}")
-                print("Continuing with next collection...")
-                failed_collections.append(collection_name)
-                continue
-
-        # Print summary
         print(f"\n{'=' * 60}")
-        print("VECTORIZATION SUMMARY")
+        print(f"Creating collection: {collection_name}")
         print(f"{'=' * 60}")
-        print(f"Total collections: {total_collections}")
-        print(f"Successful: {len(successful_collections)}")
-        print(f"Failed: {len(failed_collections)}")
-        print(f"Skipped: {len(skipped_collections)}")
 
-        if successful_collections:
-            print(f"\nSuccessfully created collections:")
-            for name in successful_collections:
-                print(f"  ✓ {name}")
+        # Find matching chunked file based on source
+        matching_file = None
+        matching_chunks = None
 
-        if failed_collections:
-            print(f"\nFailed collections:")
-            for name in failed_collections:
-                print(f"  ✗ {name}")
+        for filename, chunks in all_chunks.items():
+            # Look for files that match the source name
+            if source in filename.lower():
+                matching_file = filename
+                matching_chunks = chunks
+                break
 
-        if skipped_collections:
-            print(f"\nSkipped collections:")
-            for name in skipped_collections:
-                print(f"  - {name}")
+        if not matching_chunks:
+            print(f"WARNING: No processed chunks found for source '{source}'")
+            print(f"Skipping collection '{collection_name}'")
+            skipped_collections.append(collection_name)
+            continue
 
-        print(f"{'=' * 60}")
+        print(f"Using chunks from: {matching_file}")
+        print(f"Number of chunks: {len(matching_chunks)}")
+
+        try:
+            # Create vector store
+            vector_store = VectorStore(
+                collection_name=collection_name,
+                description=description,
+                metadata=metadata,
+                chroma_db_path=chroma_db_path
+            )
+
+            # Add documents
+            vector_store.add_documents(matching_chunks, embedding_model=embedding_model)
+            successful_collections.append(collection_name)
+
+        except VectorStoreError as e:
+            print(f"ERROR: Failed to process collection '{collection_name}': {e}")
+            print("Continuing with next collection...")
+            failed_collections.append(collection_name)
+            continue
+
+    # Print summary
+    print(f"\n{'=' * 60}")
+    print("VECTORIZATION SUMMARY")
+    print(f"{'=' * 60}")
+    print(f"Total collections: {total_collections}")
+    print(f"Successful: {len(successful_collections)}")
+    print(f"Failed: {len(failed_collections)}")
+    print(f"Skipped: {len(skipped_collections)}")
+
+    if successful_collections:
+        print(f"\nSuccessfully created collections:")
+        for name in successful_collections:
+            print(f"  ✓ {name}")
+
+    if failed_collections:
+        print(f"\nFailed collections:")
+        for name in failed_collections:
+            print(f"  ✗ {name}")
+
+    if skipped_collections:
+        print(f"\nSkipped collections:")
+        for name in skipped_collections:
+            print(f"  - {name}")
+
+    print(f"{'=' * 60}")
+
+    return {
+        'successful': successful_collections,
+        'failed': failed_collections,
+        'skipped': skipped_collections,
+        'total': total_collections
+    }
+
+
+# DEPRECATED: This main block is no longer recommended
+# Use vectorize_collections() function instead or run via scripts/init_vector_store.py
+if __name__ == "__main__":
+    import warnings
+    warnings.warn(
+        "Running vector_store.py directly is DEPRECATED. "
+        "Please use: python scripts/init_vector_store.py",
+        DeprecationWarning,
+        stacklevel=2
+    )
+
+    try:
+        results = vectorize_collections()
 
         # Exit with appropriate code
-        if failed_collections:
+        if results['failed']:
             exit(1)
-        elif skipped_collections and not successful_collections:
+        elif results['skipped'] and not results['successful']:
             exit(1)
         else:
             exit(0)
@@ -612,6 +732,9 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n\nOperation interrupted by user (Ctrl+C)")
         exit(130)
+    except VectorStoreError as e:
+        print(f"ERROR: {e}")
+        exit(1)
     except Exception as e:
         print(f"\n\nFATAL ERROR: {e}")
         import traceback
